@@ -20,6 +20,7 @@ ARG HTTPS=true
 ARG TZ=Etc/UTC
 ARG SSHD=false
 ARG DB_PASSWORD=none
+ARG DB_PASSWORD_FILE=none
 
 RUN mkdir -p /repo/main \
     && mkdir -p /repo/community
@@ -40,7 +41,7 @@ ENV SUPVISD=${SUPVISD:-supervisorctl} \
     TZ=${TZ:-Etc/UTC} \
     SSHD=${SSHD:-false} \
     DB_PASSWORD=${DB_PASSWORD:-none} \
-    DB_PASSWORD_FILE=${DB_PASSWORD:-none} \
+    DB_PASSWORD_FILE=${DB_PASSWORD_FILE:-none} \
     LANG=en_US.UTF-8 \
     LANGUAGE=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8

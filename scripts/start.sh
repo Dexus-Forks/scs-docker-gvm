@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -Eeuo pipefail
 
 export SUPVISD=${SUPVISD:-supervisorctl}
@@ -20,6 +20,19 @@ export OPT_PDF=${OPT_PDF:-0}
 if [ "${OPT_PDF}" == "1" ]; then
 	apk add --no-cache --allow-untrusted texlive texmf-dist-latexextra texmf-dist-fontsextra
 fi
+
+mkdir -p /var/lib/gvm
+mkdir -p /var/lib/gvm/CA
+mkdir -p /var/lib/gvm/cert-data
+mkdir -p /var/lib/gvm/data-objects/gvmd
+mkdir -p /var/lib/gvm/gvmd
+mkdir -p /var/lib/gvm/private
+mkdir -p /var/lib/gvm/scap-data
+chown gvm:gvm -R /var/lib/gvm
+
+## This need on HyperVisor for GVM
+#echo 'never' >/sys/kernel/mm/transparent_hugepage/enabled
+#echo 'never' >/sys/kernel/mm/transparent_hugepage/defrag
 
 mkdir -p /var/lib/gvm
 mkdir -p /var/lib/gvm/CA
@@ -173,6 +186,7 @@ if [ ! -d /var/lib/gvm/CA ] || [ ! -d /var/lib/gvm/private ] || [ ! -d /var/lib/
 	[ ! -f /var/lib/gvm/CA/cacert.pem ] || [ ! -f /var/lib/gvm/CA/clientcert.pem ] ||
 	[ ! -f /var/lib/gvm/CA/servercert.pem ] || [ ! -f /var/lib/gvm/private/CA/cakey.pem ] ||
 	[ ! -f /var/lib/gvm/private/CA/clientkey.pem ] || [ ! -f /var/lib/gvm/private/CA/serverkey.pem ]; then
+
 	echo "Creating certs folder..."
 	mkdir -p /var/lib/gvm/CA
 	mkdir -p /var/lib/gvm/private
@@ -239,6 +253,7 @@ if [ ! -f "/var/lib/gvm/.created_gvm_user" ]; then
 	else
 		su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
 	fi
+  
 	USERSLIST=$(su -c "gvmd --get-users --verbose" gvm)
 	IFS=' '
 	read -ra ADDR <<<"$USERSLIST"
@@ -246,7 +261,6 @@ if [ ! -f "/var/lib/gvm/.created_gvm_user" ]; then
 	echo "${ADDR[1]}"
 
 	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value ${ADDR[1]}" gvm
-
 	touch /var/lib/gvm/.created_gvm_user
 fi
 
