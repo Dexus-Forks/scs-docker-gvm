@@ -51,90 +51,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
-      # So now you can use Actions' own caching!
-      - name: Cache APK Output
-        id: restore-cache-apk
-        uses: actions/cache@v2
+      - name: Download artifact
+        uses: dawidd6/action-download-artifact@v2
         with:
-          path: |
-            ${{ github.workspace }}/apk-build/target
-            ${{ github.workspace }}/apk-build/user.abuild/
-          key: ${{ runner.os }}-apks-${{ hashFiles('./apk-build/aports2/**/APKBUILD') }}
-          restore-keys: |
-            ${{ runner.os }}-apks-${{ hashFiles('./apk-build/aports2/**/APKBUILD') }}
-
-      # Login against a Docker registry except on PR
-      # https://github.com/docker/login-action
-      - name: Login to GitHub Container Registry ${{ env.REGISTRY }}
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v1
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v1
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # Build and push Docker image with Buildx (don't push on PR)
-      # https://github.com/docker/build-push-action
-      - name: Build and push Docker image
-        if: steps.restore-cache-apk.outputs.cache-hit != 'true'
-        uses: docker/build-push-action@v2
-        with:
-          context: ./apk-build/builder/
-          tags: apk-builder:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,mode=max,dest=/tmp/.buildx-cache-new
-          push: false
-          load: true
-
-      - name: Prepare Folders and Secrets for Build
-        if: steps.restore-cache-apk.outputs.cache-hit != 'true'
-        id: userid
-        shell: bash
-        run: echo "::set-output name=author::$(id -u ${USER}):$(id -g ${USER})"
-
-      - name: Prepare Folders and Secrets for Build
-        if: steps.restore-cache-apk.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          mkdir -p ${GITHUB_WORKSPACE}/apk-build/user.abuild
-          mkdir -p ${GITHUB_WORKSPACE}/apk-build/aports2
-          mkdir -p ${GITHUB_WORKSPACE}/apk-build/target/community/x86_64
-          mkdir -p ${GITHUB_WORKSPACE}/apk-build/target/community/noarch
-          chmod -R 777 ${GITHUB_WORKSPACE}/apk-build/aports2
-          chmod -R 777 ${GITHUB_WORKSPACE}/apk-build/target
-          echo 'PACKAGER_PRIVKEY="/home/packager/.abuild/build.rsa"' > ${GITHUB_WORKSPACE}/apk-build/user.abuild/abuild.conf
-          echo "${{ secrets.APKBUILD_RSA }}" > ${GITHUB_WORKSPACE}/apk-build/user.abuild/build.rsa
-          chmod 644 ${GITHUB_WORKSPACE}/apk-build/user.abuild/build.rsa
-          echo "${{ secrets.APKBUILD_RSA_PUB }}" > ${GITHUB_WORKSPACE}/apk-build/user.abuild/build.rsa.pub
-          chmod 644 ${GITHUB_WORKSPACE}/apk-build/user.abuild/build.rsa.pub
-
-      - uses: addnab/docker-run-action@v3
-        if: steps.restore-cache-apk.outputs.cache-hit != 'true'
-        with:
-          image: apk-builder:latest
-          options: |
-            -v ${{ github.workspace }}/apk-build/user.abuild/:/home/packager/.abuild
-            -v ${{ github.workspace }}/apk-build/aports2:/work
-            -v ${{ github.workspace }}/apk-build/target:/target
-            -e CHECKSUM=0
-          run: |
-            sudo chown -R packager:packager /home/packager/.abuild
-            sudo chmod 600 /home/packager/.abuild/build.rsa
-            sudo cp /home/packager/.abuild/build.rsa.pub /etc/apk/keys/
-            sudo chown -R packager:packager /target
-            /home/packager/bin/build.sh
-
-      - name: Move cache
-        if: steps.restore-cache-apk.outputs.cache-hit != 'true'
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          # Optional, GitHub token, a Personal Access Token with `public_repo` scope if needed
+          # Required, if artifact is from a different repo
+          github_token: ${{secrets.GITHUB_TOKEN}}
+          # Required, workflow file name or ID
+          workflow: build-apk.yml
+          # Optional, will use the branch
+          branch: master
+          # Optional, uploaded artifact name,
+          # will download all artifacts if not specified
+          # and extract them in respective subdirectories
+          # https://github.com/actions/download-artifact#download-all-artifacts
+          name: apk-builds
+          # Optional, directory where to extract artifact. Defaults to the artifact name (see `name` input)
+          path: ./apk-builds/
+          # Optional, defaults to current repo
+          repo: Secure-Compliance-Solutions-LLC/GVM-APK-build
 
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
