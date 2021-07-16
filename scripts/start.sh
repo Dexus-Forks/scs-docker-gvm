@@ -1,20 +1,38 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-SUPVISD=${SUPVISD:-supervisorctl}
+export SUPVISD=${SUPVISD:-supervisorctl}
+export USERNAME=${USERNAME:-${GVMD_USER:-admin}}
+export PASSWORD=${PASSWORD:-${GVMD_PASSWORD:-adminpassword}}
+export PASSWORD_FILE=${PASSWORD_FILE:-${GVMD_PASSWORD_FILE:-none}}
+export TIMEOUT=${TIMEOUT:-15}
+export DEBUG=${DEBUG:-N}
+export RELAYHOST=${RELAYHOST:-smtp}
+export SMTPPORT=${SMTPPORT:-25}
+export AUTO_SYNC=${AUTO_SYNC:-true}
+export HTTPS=${HTTPS:-true}
+export TZ=${TZ:-Etc/UTC}
+export SSHD=${SSHD:-false}
+export DB_PASSWORD=${DB_PASSWORD:-none}
+export DB_PASSWORD_FILE=${DB_PASSWORD_FILE:-none}
+export OPT_PDF=${OPT_PDF:-0}
 
-USERNAME=${GVMD_USER:-${USERNAME:-admin}}
-PASSWORD=${GVMD_PASSWORD:-${PASSWORD:-adminpassword}}
-TIMEOUT=${TIMEOUT:-15}
-DEBUG=${DEBUG:-N}
-RELAYHOST=${RELAYHOST:-smtp}
-SMTPPORT=${SMTPPORT:-25}
+if [ "${OPT_PDF}" == "1" ]; then
+	apk add --no-cache --allow-untrusted texlive texmf-dist-latexextra texmf-dist-fontsextra
+fi
 
-AUTO_SYNC=${AUTO_SYNC:-true}
-HTTPS=${HTTPS:-true}
-TZ=${TZ:-UTC}
-SSHD=${SSHD:-false}
-DB_PASSWORD=${DB_PASSWORD:-none}
+mkdir -p /var/lib/gvm
+mkdir -p /var/lib/gvm/CA
+mkdir -p /var/lib/gvm/cert-data
+mkdir -p /var/lib/gvm/data-objects/gvmd
+mkdir -p /var/lib/gvm/gvmd
+mkdir -p /var/lib/gvm/private
+mkdir -p /var/lib/gvm/scap-data
+chown gvm:gvm -R /var/lib/gvm
+
+## This need on HyperVisor for GVM
+#echo 'never' >/sys/kernel/mm/transparent_hugepage/enabled
+#echo 'never' >/sys/kernel/mm/transparent_hugepage/defrag
 
 mkdir -p /var/lib/gvm
 mkdir -p /var/lib/gvm/CA
@@ -47,7 +65,9 @@ if [ -S /run/redis-openvas/redis.sock ]; then
 fi
 
 ${SUPVISD} start redis
-${SUPVISD} status redis
+if [ "${DEBUG}" == "Y" ]; then
+	${SUPVISD} status redis
+fi
 
 echo "Wait for redis socket to be created..."
 while [ ! -S /run/redis-openvas/redis.sock ]; do
@@ -63,7 +83,7 @@ while [ "${X}" != "PONG" ]; do
 done
 echo "Redis ready."
 
-if [[ ! -d "/opt/database/" ]] || [[ -d "/opt/database/" && $(find /opt/database/ -type d -empty) ]]; then
+if [ ! -d "/opt/database/" ] || ([ -d "/opt/database/" ] && [ "$(find /opt/database/ -maxdepth 0 -empty)" ]); then
 	echo "Creating Database folder..."
 	mkdir -p /opt/database
 	mkdir -p /run/postgresql
@@ -84,6 +104,7 @@ if [[ ! -d "/opt/database/" ]] || [[ -d "/opt/database/" && $(find /opt/database
 fi
 sleep 1
 chown postgres:postgres -R /opt/database
+mkdir -p /run/postgresql
 chown postgres:postgres -R /run/postgresql/
 sleep 2
 echo "Starting PostgreSQL..."
@@ -149,18 +170,23 @@ fi
 echo "gvmd --migrate"
 su -c "gvmd --migrate" gvm
 
-if [ "$DB_PASSWORD" != "none" ]; then
+if [ "$DB_PASSWORD_FILE" != "none" ] && [ -e "$DB_PASSWORD_FILE" ]; then
+	su -c "psql --dbname=gvmd --command=\"alter user gvm password '$(<"$DB_PASSWORD_FILE")';\"" postgres
+elif [ "$DB_PASSWORD" != "none" ]; then
 	su -c "psql --dbname=gvmd --command=\"alter user gvm password '$DB_PASSWORD';\"" postgres
 fi
 
 echo "Creating gvmd folder..."
-su-exec gvm mkdir -p /var/lib/gvm/gvmd/report_formats
+su -c "mkdir -p /var/lib/gvm/gvmd/report_formats" gvm
 cp -r /report_formats /var/lib/gvm/gvmd/
+chown gvm:gvm -R /var/lib/gvm
+find /var/lib/gvm/gvmd/report_formats -type f -name "generate" -exec chmod +x {} \;
 
 if [ ! -d /var/lib/gvm/CA ] || [ ! -d /var/lib/gvm/private ] || [ ! -d /var/lib/gvm/private/CA ] ||
 	[ ! -f /var/lib/gvm/CA/cacert.pem ] || [ ! -f /var/lib/gvm/CA/clientcert.pem ] ||
-	[ ! -f /var/lib/gvm/CA/clientcert.pem ] || [ ! -f /var/lib/gvm/private/CA/cacert.pem ] ||
-	[ ! -f /var/lib/gvm/private/CA/clientcert.pem ] || [ ! -f /var/lib/gvm/private/CA/clientcert.pem ]; then
+	[ ! -f /var/lib/gvm/CA/servercert.pem ] || [ ! -f /var/lib/gvm/private/CA/cakey.pem ] ||
+	[ ! -f /var/lib/gvm/private/CA/clientkey.pem ] || [ ! -f /var/lib/gvm/private/CA/serverkey.pem ]; then
+
 	echo "Creating certs folder..."
 	mkdir -p /var/lib/gvm/CA
 	mkdir -p /var/lib/gvm/private
@@ -171,17 +197,9 @@ if [ ! -d /var/lib/gvm/CA ] || [ ! -d /var/lib/gvm/private ] || [ ! -d /var/lib/
 	chown gvm:gvm -R /var/lib/gvm/
 fi
 
-if [ ! -f "/var/lib/gvm/.firstsync" ]; then
-	# Sync NVTs, CERT data, and SCAP data on container start
-	# See this as a super fallback to have at least some data, even if it is then out of date.
-	/sync-initial.sh
-fi
-
-if [ "$AUTO_SYNC" = true ] || [ ! -f "/var/lib/gvm/.firstsync" ]; then
-	# Sync NVTs, CERT data, and SCAP data on container start
-	/sync-all.sh
-	touch /var/lib/gvm/.firstsync
-fi
+# Sync NVTs, CERT data, and SCAP data on container start
+# See this as a super fallback to have at least some data, even if it is then out of date.
+/sync-initial.sh
 
 #############################
 # Remove leftover pid files #
@@ -214,7 +232,7 @@ while [ ! -S /var/run/ospd/ospd.sock ]; do
 done
 
 # echo "Creating OSPd socket link from old location..."
-# rm -rf /tmp/ospd.sock
+# rm -rfv /tmp/ospd.sock
 # ln -s /var/run/ospd/ospd.sock /tmp/ospd.sock
 
 echo "Starting Greenbone Vulnerability Manager..."
@@ -230,8 +248,12 @@ done
 
 if [ ! -f "/var/lib/gvm/.created_gvm_user" ]; then
 	echo "Creating Greenbone Vulnerability Manager admin user"
-	su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
-
+	if [ "$PASSWORD_FILE" != "none" ] && [ -e "$PASSWORD_FILE" ]; then
+		su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$(<"$PASSWORD_FILE")\"" gvm
+	else
+		su -c "gvmd --role=\"Super Admin\" --create-user=\"$USERNAME\" --password=\"$PASSWORD\"" gvm
+	fi
+  
 	USERSLIST=$(su -c "gvmd --get-users --verbose" gvm)
 	IFS=' '
 	read -ra ADDR <<<"$USERSLIST"
@@ -239,11 +261,8 @@ if [ ! -f "/var/lib/gvm/.created_gvm_user" ]; then
 	echo "${ADDR[1]}"
 
 	su -c "gvmd --modify-setting 78eceaec-3385-11ea-b237-28d24461215b --value ${ADDR[1]}" gvm
-
 	touch /var/lib/gvm/.created_gvm_user
 fi
-
-su -c "gvmd --user=\"$USERNAME\" --new-password=\"$PASSWORD\"" gvm
 
 echo "Starting Greenbone Security Assistant..."
 if [ "${HTTPS}" == "true" ]; then
@@ -260,27 +279,20 @@ fi
 
 if [ "$SSHD" == "true" ]; then
 	echo "Starting OpenSSH Server..."
-	if [ ! -d /data/scanner-ssh-keys ]; then
+	if [ ! -d /var/lib/gvm/.ssh ]; then
 		echo "Creating scanner SSH keys folder..."
-		mkdir /data/scanner-ssh-keys
-		chown gvm:gvm -R /data/scanner-ssh-keys
-	fi
-	if [ ! -h /usr/local/share/gvm/.ssh ]; then
-		echo "Fixing scanner SSH keys folder..."
-		rm -rf /usr/local/share/gvm/.ssh
-		ln -s /data/scanner-ssh-keys /usr/local/share/gvm/.ssh
-		chown gvm:gvm -R /data/scanner-ssh-keys
-		chown gvm:gvm -R /usr/local/share/gvm/.ssh
+		mkdir /var/lib/gvm/.ssh
+		chown gvm:gvm -R /var/lib/gvm/.ssh
 	fi
 	if [ ! -d /sockets ]; then
 		mkdir /sockets
 		chown gvm:gvm -R /sockets
 	fi
 	echo "gvm:gvm" | chpasswd
-	rm -rf /var/run/sshd
+	rm -rfv /var/run/sshd
 	mkdir -p /var/run/sshd
-	if [ ! -f /data/ssh/sshd_config ]; then
-		mv /sshd_config /data/ssh/sshd_config
+	if [ ! -f /etc/ssh/sshd_config ]; then
+		mv /sshd_config /etc/ssh/sshd_config
 	fi
 	${SUPVISD} start sshd
 	if [ "${DEBUG}" == "Y" ]; then
@@ -291,9 +303,6 @@ fi
 ${SUPVISD} start GVMUpdate
 if [ "${DEBUG}" == "Y" ]; then
 	${SUPVISD} status GVMUpdate
-fi
-if [ "${SETUP}" == "1" ]; then
-	${SUPVISD} shutdown
 fi
 GVMVER=$(su -c "gvmd --version" gvm)
 echo "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
@@ -306,5 +315,9 @@ echo "Server Public key: $(cat /etc/ssh/ssh_host_ed25519_key.pub)"
 echo "-----------------------------------------------------------"
 echo "-----------------------------------------------------------"
 echo "+        Find logs at: /var/log/supervisor/               +"
-echo "+              and at: /usr/local/var/log/gvm/            +"
+echo "+              and at: /var/log/gvm/                      +"
 echo "==========================================================="
+
+if [ "${SETUP}" == "1" ]; then
+	${SUPVISD} shutdown || true
+fi
