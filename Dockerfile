@@ -16,6 +16,8 @@ ARG DEBUG=N
 ARG RELAYHOST=smtp
 ARG SMTPPORT=25
 ARG AUTO_SYNC=true
+ARG CERTIFICATE=none
+ARG CERTIFICATE_KEY=none
 ARG HTTPS=true
 ARG TZ=Etc/UTC
 ARG SSHD=false
@@ -37,6 +39,8 @@ ENV SUPVISD=${SUPVISD:-supervisorctl} \
     SMTPPORT=${SMTPPORT:-25} \
     AUTO_SYNC=${AUTO_SYNC:-true} \
     HTTPS=${HTTPS:-true} \
+    CERTIFICATE=${CERTIFICATE:-none} \
+    CERTIFICATE_KEY=${CERTIFICATE_KEY:-none} \
     TZ=${TZ:-Etc/UTC} \
     SSHD=${SSHD:-false} \
     DB_PASSWORD=${DB_PASSWORD:-none} \
@@ -81,6 +85,7 @@ COPY report_formats/* /report_formats/
 COPY config/supervisord.conf /etc/supervisord.conf
 COPY config/logrotate-gvm.conf /etc/logrotate.d/gvm
 COPY config/redis-openvas.conf /etc/redis.conf
+COPY sshd_config /etc/ssh/sshd_config
 
 
 ARG SETUP=0
