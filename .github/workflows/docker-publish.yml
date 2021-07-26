@@ -62,6 +62,7 @@ jobs:
 
       - name: Relase Prepare for latest Tag
         id: releasePreareLatestTag
+        shell: bash
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "create" ]]  && [[ "$GITHUB_REF" =~ ^user.* ]]; then
             echo -n "::set-output name=latest::true
