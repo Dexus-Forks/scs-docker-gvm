@@ -61,7 +61,6 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Relase Prepare for latest Tag
-        if: github.event_name == 'pull_request'
         id: releasePreareLatestTag
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "create" ]]  && [[ "$GITHUB_REF" =~ ^user.* ]]; then
